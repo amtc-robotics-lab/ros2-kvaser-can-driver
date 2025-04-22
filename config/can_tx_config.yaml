@@ -1,5 +1,14 @@
 can_tx_config:
 - device_channel: 0
-  can_id: 0x201
+  can_id: 50
 - device_channel: 0
-  can_id: 0x202
+  can_id: 51
+- device_channel: 0
+  can_id: 52
+- device_channel: 0
+  can_id: 53
+- device_channel: 0
+  can_id: 54
+- device_channel: 0
+  can_id: 80
+

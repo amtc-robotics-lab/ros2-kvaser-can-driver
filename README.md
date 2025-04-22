@@ -1,2 +1,6 @@
 # ros_kvaser_can_driver
 Kvaser CAN Interface Driver for ROS 2
+
+# Install libs
+https://kvaser.com/canlib-webhelp/section_install_linux.htm
+

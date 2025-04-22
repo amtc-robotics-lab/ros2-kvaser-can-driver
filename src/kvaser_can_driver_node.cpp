@@ -91,24 +91,29 @@ KvaserCanDriver::KvaserCanDriver() : Node("kvaser_can_driver_node")
   // Kvaser canlib initialize
   canStatus stat;
   int32_t dev_channels = 0;
+  RCLCPP_INFO(this->get_logger(), "Initialize Kvaser canlib");
   canInitializeLibrary();
   stat = canGetNumberOfChannels(&dev_channels);
   if (device_channel_num_ > dev_channels)
   {
-    RCLCPP_ERROR(this->get_logger(), "CAN channel number error.");
+    RCLCPP_ERROR(this->get_logger(), "You are waiting for %d channels, but only %d channels are available in the computer.", device_channel_num_, dev_channels);
     rclcpp::shutdown();
     return;
   }
+  RCLCPP_INFO(this->get_logger(), "Found %d Kvaser channels", dev_channels);
 
   receive_thread_list_.clear();
   kvaser_mtx_ = new std::mutex[device_channel_num_];
 
+  RCLCPP_INFO(this->get_logger(), "Number of Kvaser channels: %d", dev_channels);
+  RCLCPP_INFO(this->get_logger(), "Number of Kvaser channels to use: %d", device_channel_num_);
   for (int32_t i = 0; i < device_channel_num_; ++i)
   {
     try
     {
       // Open
       CanHandle hnd;
+      RCLCPP_INFO(this->get_logger(), "Trying to open channel %d", i);
       hnd = canOpenChannel(i, canOPEN_EXCLUSIVE);
       if (hnd < 0)
       {
@@ -197,6 +202,7 @@ void KvaserCanDriver::cantxCallback(const ros_kvaser_can_driver::msg::CANFrame::
         (uint8_t)can_tx_config_.msgs[i].device_channel == (uint8_t)can_frame->device_channel)
     {
       uint8_t can_data[8];
+      RCLCPP_INFO(this->get_logger(), "CAN ch%d: Send ID: 0x%d", can_frame->device_channel, (int)can_frame->can_id);
       for (uint8_t j = 0; j < (uint8_t)can_frame->can_dlc; ++j)
       {
         can_data[j] = can_frame->can_data[j];
@@ -205,6 +211,7 @@ void KvaserCanDriver::cantxCallback(const ros_kvaser_can_driver::msg::CANFrame::
       canStatus stat;
       {
         // boost::mutex::scoped_lock(kvaser_mtx_[can_tx_config_.msgs[i].channel]);
+        RCLCPP_INFO(this->get_logger(), "Send CAN data ID: 0x%3X", (int)can_tx_config_.msgs[i].can_id);
         stat = canWriteWait(kvaser_hnd_[can_tx_config_.msgs[i].device_channel], (long)can_tx_config_.msgs[i].can_id, can_data, (unsigned int)can_frame->can_dlc, canMSG_STD, (unsigned long)time_out);
       }
 
@@ -213,6 +220,10 @@ void KvaserCanDriver::cantxCallback(const ros_kvaser_can_driver::msg::CANFrame::
         RCLCPP_WARN(this->get_logger(), "Cannot send CAN data ID : %d", (int32_t)can_tx_config_.msgs[i].can_id);
       }
       return;
+    }
+    else
+    {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this, 10000, "CAN ch %d: Send unknown msg can_id: %d, expecting can_id: %d", can_frame->device_channel, (int)can_frame->can_id, (int)can_tx_config_.msgs[i].can_id);
     }
   }
 }
@@ -223,6 +234,8 @@ void KvaserCanDriver::canReceiveThread(uint8_t channel_num)
 {
   rcutils_duration_value_t throttle_period = 10000; // スロットリングの時間間隔 (ここでは10秒)
 
+  RCLCPP_INFO(this->get_logger(), "Start channel %d receive thread", channel_num);
+
   while (rclcpp::ok())
   {
     long id = 0;
@@ -230,7 +243,7 @@ void KvaserCanDriver::canReceiveThread(uint8_t channel_num)
     uint8_t rxmsg[8];
     unsigned long kv_time_stamp = 0;
     unsigned int flag = 0;
-    const unsigned long timeout_ms = 10;
+    const unsigned long timeout_ms = 500; // 200ms
 
     rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
 
@@ -300,6 +313,11 @@ void KvaserCanDriver::canReceiveThread(uint8_t channel_num)
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this, throttle_period, "Cannot send CAN data ID : %d", (int32_t)can_tx_config_.msgs[i].can_id);
               }
             }
+          }
+          else
+          {
+            RCLCPP_INFO_THROTTLE(this->get_logger(), *this, throttle_period, "CAN ch%d: Receive unknown msg can_id: 0x%3X", channel_num, (int)id);
+            // RCLCPP_INFO(this->get_logger(), "CAN ch %d: Receive unknown msg can_id: %d, looking for can_id: %d", channel_num, (int)id, (int)can_rx_config_.msgs[i].can_id);
           }
         }
       }
